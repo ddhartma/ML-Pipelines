@@ -1,17 +1,27 @@
+[image1]: git_images/image1.png "image1"
 # ML Pipelines
 
 Let's build up pipelines to automate Machine Learning Workflows on ETL processed data.
 
 These topics will be covered:
-- Advantages of Machine Learning Pipelines
+1. [Build the Machine Learning Workflow](#Build_the_Machine_Learning_Workflow)
+2. [Estimators - Transformers - Predictors](#Estimators_Transformers_Predictors)
+3. [Without a Pipeline](#Without_a_Pipeline)
+4. [With a Pipeline](#With_a_Pipeline)
+5. [Advantages of Using Pipeline](#Advantages_of_Using_Pipeline)
+6. [Coding with ML Pipelines](#Coding_with_ML_Pipelines)
+7. [Pipelines and Feature Unions](#Pipelines_and_Feature_Unions)
+8. [Using Feature Union](#Using_Feature_Union)
+9. [Creating Customer Transformer](#Creating_Customer_Transformer)
+
+
 - Scikit-learn Pipeline
 - Scikit-learn Feature Union
 - Pipelines and Grid Search
 - Case Study
 
 
-
-## Build the Machine Learning Workflow
+## Build the Machine Learning Workflow <a name="Build_the_Machine_Learning_Workflow"></a>
 Open notebook ***./ml_notebooks/ml_workflow.ipynb*** for the ml workflow
 - The necessary code:
   ```
@@ -85,7 +95,7 @@ Open notebook ***./ml_notebooks/ml_workflow.ipynb*** for the ml workflow
   main()
   ```
 
-## Estimators - Transformers - Predictors
+## Estimators - Transformers - Predictors <a name="Estimators_Transformers_Predictors"></a>
 Below, you'll find a simple example of a machine learning workflow where we generate features from text data using count vectorizer and tf-idf transformer, and then fit it to a random forest classifier. Before we get into using pipelines, let's first use this example to go over some scikit-learn terminology.
 
 - ***ESTIMATOR***: An estimator is any object that learns from data, whether it's a classification, regression, or clustering algorithm, or a transformer that extracts or filters useful features from raw data. Since estimators learn from data, they each must have a fit method that takes a dataset. In the example below, the
@@ -107,7 +117,7 @@ Below, you'll find a simple example of a machine learning workflow where we gene
   in the example below is a predictor.
 
 
-## Without a Pipeline
+## Without a Pipeline <a name="Without_a_Pipeline"></a>
 - In machine learning tasks, it's pretty common to have a very specific sequence of transformers to fit to data before applying a final estimator, such as this classifier. And normally, we'd have to initialize all the estimators, fit and transform the training data for each of the transformers, and then fit to the final estimator. Next, we'd have to call transform for each transformer again to the test data, and finally call predict on the final estimator.
   ```
   vect = CountVectorizer()
@@ -126,7 +136,7 @@ Below, you'll find a simple example of a machine learning workflow where we gene
   ```
 
 
-## With a Pipelines
+## With a Pipeline <a name="With_a_Pipeline"></a>
 - Fortunately, you can actually automate all of this fitting, transforming, and predicting, by chaining these estimators together into a single estimator object. That single estimator would be scikit-learn's Pipeline. To create this pipeline, we just need a list of (key, value) pairs, where the key is a string containing what you want to name the step, and the value is the estimator object.
   ```
   pipeline = Pipeline([
@@ -146,7 +156,7 @@ Below, you'll find a simple example of a machine learning workflow where we gene
 - Note that every step of this pipeline has to be a transformer, except for the last step, which can be of an estimator type. Pipeline takes on all the methods of whatever the last estimator in its sequence is. For example, here, since the final estimator of our pipeline is a classifier, the pipeline object can be used as a classifier, taking on the fit and predict methods of its last step. Alternatively, if the last estimator was a transformer, then pipeline would be a transformer.
 
 
-## Advantages of Using Pipeline
+## Advantages of Using Pipeline <a name="Advantages_of_Using_Pipeline"></a>
 1. Simplicity and Convencience
   - Automates repetitive steps - Chaining all of your steps into one estimator allows you to fit and predict on all steps of your sequence automatically with one call. It handles smaller steps for you, so you can focus on implementing higher level changes swiftly and efficiently.
   - Easily understandable workflow - Not only does this make your code more concise, it also makes your workflow much easier to understand and modify. Without Pipeline, your model can easily turn into messy spaghetti code from all the adjustments and experimentation required to improve your model.
@@ -163,8 +173,8 @@ Below, you'll find a simple example of a machine learning workflow where we gene
   - Using Pipeline, all transformations for data preparation and feature extractions occur within each fold of the cross validation process.
   - This prevents common mistakes where you’d allow your training process to be influenced by your test data - for example, if you used the entire training dataset to normalize or extract features from your data.
 
-## Coding with ML Pipelines
-Open notebook ***./ml_notebooks/pipeline.ipynb*** for the ml workflow
+## Coding with ML Pipelines <a name="Coding_with_ML_Pipelines"></a>
+Open notebook ***./ml_notebooks/pipeline.ipynb*** for working with ML pipeline
   ```
   import nltk
   nltk.download(['punkt', 'wordnet'])
@@ -237,4 +247,46 @@ Open notebook ***./ml_notebooks/pipeline.ipynb*** for the ml workflow
 
   ```
 
-  i
+## Pipelines and Feature Unions <a name="Pipelines_and_Feature_Unions"></a>
+- FEATURE UNION: Feature union is a class in scikit-learn’s Pipeline module that allows us to perform steps in parallel and take the union of their results for the next step.
+- A pipeline performs a list of steps in a linear sequence, while a FEATURE UNION performs a ***list of steps in parallel*** and then ***combines their results***.
+- In more complex workflows, multiple feature unions are often used within pipelines, and multiple pipelines are used within feature unions.
+- In the image below one would like to engineer a feature  (extract tfidf) from the dataset but simultaneously wants to engineer another feature (number of characters for each document)
+  ![image1]
+
+
+## Using Feature Union <a name="Using_Feature_Union"></a>
+Open notebook ***./ml_notebooks/feature_union.ipynb*** for working with feature unions
+- Feature unions are super helpful for handling these situations, where we need to run two steps in parallel on the same data and combine their results to pass into the next step.
+- Like pipelines, feature unions are built using a list of (key, value) pairs, where the key is the string that you want to name a step, and the value is the estimator object. Also like pipelines, feature unions combine a list of estimators to become a single estimator. However, a feature union runs its estimators in parallel, rather than in a sequence as a pipeline does. In this example, the estimators run in parallel are nlp_pipeline and text_length. Notice we use a pipeline in this feature union to make sure the count vectorizer and tfidf transformer steps are still running in sequence.
+  ```
+  X = df['text'].values
+  y = df['label'].values
+  X_train, X_test, y_train, y_test = train_test_split(X, y)
+
+  pipeline = Pipeline([
+      ('features', FeatureUnion([
+
+          ('nlp_pipeline', Pipeline([
+              ('vect', CountVectorizer()),
+              ('tfidf', TfidfTransformer())
+          ])),
+
+          ('txt_len', TextLengthExtractor())
+      ])),
+
+      ('clf', RandomForestClassifier())
+  ])
+
+  # train classifier
+  pipeline.fit(Xtrain)
+
+  # predict on test data
+  predicted = pipeline.predict(Xtest)
+
+  ```
+
+- Read more about feature unions in Scikit-learn's [user guide](scikit-learn.org/stable/modules/pipeline.html#feature-union).
+
+## Creating Customer Transformer <a name="Creating_Customer_Transformer"></a>
+Open notebook ***./ml_notebooks/customer_transformer.ipynb*** for creating customer transformer
