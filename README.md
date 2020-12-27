@@ -15,12 +15,6 @@ These topics will be covered:
 9. [Creating Customer Transformer](#Creating_Customer_Transformer)
 10. [Pipelines and Grid Search](#Pipelines_and_Grid_Search)
 
-- Scikit-learn Pipeline
-- Scikit-learn Feature Union
-- Pipelines and Grid Search
-- Case Study
-
-
 ## Build the Machine Learning Workflow <a name="Build_the_Machine_Learning_Workflow"></a>
 Open notebook ***./ml_notebooks/ml_workflow.ipynb*** for the ml workflow
 - The necessary code:
