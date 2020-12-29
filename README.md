@@ -1,6 +1,10 @@
 [image1]: git_images/image1.png "image1"
 # ML Pipelines
 
+Whenever new data points are added to the existing data, we need to perform the same ETL preprocessing steps again before we can use the machine learning model to make predictions. This becomes a tedious and time-consuming process!
+
+An alternate to this is creating a machine learning pipeline that remembers the complete set of preprocessing steps in the exact same order. So that whenever any new data point is introduced, the machine learning pipeline performs the steps as defined and uses the machine learning model to predict the target variable.
+
 Let's build up pipelines to automate Machine Learning Workflows on ETL processed data.
 
 These topics will be covered:
@@ -14,6 +18,8 @@ These topics will be covered:
 8. [Using Feature Union](#Using_Feature_Union)
 9. [Creating Customer Transformer](#Creating_Customer_Transformer)
 10. [Pipelines and Grid Search](#Pipelines_and_Grid_Search)
+11. [ColumnTransformer](#ColumnTransformer)
+12. [Pipeline Design: Another Example](#Pipeline_Design_Another_Example)
 
 ## Build the Machine Learning Workflow <a name="Build_the_Machine_Learning_Workflow"></a>
 Open notebook ***./ml_notebooks/ml_workflow.ipynb*** for the ml workflow
@@ -109,7 +115,6 @@ Below, you'll find a simple example of a machine learning workflow where we gene
   - RandomForestClassifier,
 
   in the example below is a predictor.
-
 
 ## Without a Pipeline <a name="Without_a_Pipeline"></a>
 - In machine learning tasks, it's pretty common to have a very specific sequence of transformers to fit to data before applying a final estimator, such as this classifier. And normally, we'd have to initialize all the estimators, fit and transform the training data for each of the transformers, and then fit to the final estimator. Next, we'd have to call transform for each transformer again to the test data, and finally call predict on the final estimator.
@@ -640,3 +645,128 @@ Open notebook ***./ml_notebooks/grid_search.ipynb*** for implementing Grid Searc
 
   Best Parameters: {'features__transformer_weights': {'text_pipeline': 1, 'verb_feature': 0.5}}
   ```
+
+## [ColumnTransformer](https://towardsdatascience.com/using-columntransformer-to-combine-data-processing-steps-af383f7d5260) <a name="ColumnTransformer"></a>
+- ColumnTransformers come in handy when you are creating a data pipeline where different columns need different transformations. Perhaps you have a combination of categorical and numeric features. Perhaps you want to use different imputation strategies to fill NaNs in different numeric columns. You could transform each column separately and then stitch them together, or you can use ColumnTransformer to do that work for you.
+Here’s a basic example. In this case, our input features are weekday (0–6 Monday-Sunday), hour (0–23), and maximum, average, and minimum daily temperature. I want to standard scale the temperature features and one hot encode the date features.
+Assuming I have my input and target DataFrames (X_train, y_train) already loaded:
+  ```
+  from sklearn.compose import ColumnTransformer
+  from sklearn.preprocessing import StandardScaler, OneHotEncoder
+  from sklearn.impute import SimpleImputer
+  from sklearn.linear_model import LinearRegression
+  from sklearn.pipeline import Pipeline
+  # define column transformer and set n_jobs to use all cores
+  col_transformer = ColumnTransformer(
+                      transformers=[
+                          ('ss', StandardScaler(), ['max_temp',
+                                                    'avg_temp',
+                                                    'min_temp']),
+                          ('ohe', OneHotEncoder(), ['weekday',
+                                                    'hour'])
+                      ],
+                      remainder='drop',
+                      n_jobs=-1
+                      )
+  ```
+
+- We are then ready to transform!
+  ```
+  X_train_transformed = col_transformer.fit_transform(X_train)
+  ```
+  Note that we need to indicate the column in the format expected by the transformer. If the transformer expects a 2D array, pass a list of string columns (even if it is only one column — eg. [‘col1']). If the transformer expects a 1D array, pass just the string column name — eg. 'col1'.
+
+- More likely, you’ll add the ColumnTransformer as a step in your Pipeline  
+  ```
+  lr = LinearRegression()
+  pipe = Pipeline([
+              ("preprocessing", col_transformer),
+              ("lr", lr)
+         ])
+  pipe.fit(X_train, y_train)
+  ```
+
+- Tip 1: Use pipelines for any columns that need multiple transformations
+If you want multiple transformations on the same column, you need a pipeline. That means a pipeline for each set of columns that are getting the same treatment, for example:
+  ```
+  # define transformers
+  si_0 = SimpleImputer(strategy='constant', fill_value=0)
+  ss = StandardScaler()
+  ohe = OneHotEncoder()
+  # define column groups with same processing
+  cat_vars = ['weekday', 'hour']
+  num_vars = ['max_temp', 'avg_temp', 'min_temp']
+  # set up pipelines for each column group
+  categorical_pipe = Pipeline([('si_0', si_0), ('ohe', ohe)])
+  numeric_pipe = Pipeline([('si_0', si_0), ('ss', ss)])
+  # set up columnTransformer
+  col_transformer = ColumnTransformer(
+                      transformers=[
+                          ('nums', numeric_pipe, num_vars),
+                          ('cats', categorical_pipe, cat_vars)
+                      ],
+                      remainder='drop',
+                      n_jobs=-1
+                      )
+  ```
+
+- Tip 2: Keep track of your column names
+From the scikit-learn docs: “The order of the columns in the transformed feature matrix follows the order of how the columns are specified in the transformers list. Columns of the original feature matrix that are not specified are dropped from the resulting transformed feature matrix, unless specified in the passthrough keyword. Those columns specified with passthrough are added at the right to the output of the transformers.”
+So for the examples above, the preprocessed array columns are:
+  ```
+  [‘max_temp’, ‘avg_temp’, ‘min_temp, ‘weekday_0’, ‘weekday_1’, ‘weekday_2’, ‘weekday_3’, ‘weekday_4’, ‘weekday_5’, ‘weekday_6’, ‘hour_0’, ‘hour_1’, ‘hour_2’, ‘hour_3’, ‘hour_4’, ‘hour_5’, ‘hour_6’, ‘hour_7’, ‘hour_8’, ‘hour_9’, ‘hour_10’, ‘hour_11’, ‘hour_12’, ‘hour_13’, ‘hour_14’, ‘hour_15’, ‘hour_16’, ‘hour_17’, ‘hour_18’, ‘hour_19’, ‘hour_20’, ‘hour_21’, ‘hour_22’, ‘hour_23’]
+  ```
+
+  This is pretty tedious to do by hand. For transformations that provide feature names, you can access them like this:
+  ```
+  col_transformer.named_transformers_['ohe'].get_feature_names()
+  ```
+  Here, ‘ohe’ is the name of my transformer in the first example. Unfortunately, transformers that don’t create more features/columns don’t typically have this method, and ColumnTransformer relies on this attribute of its interior transformers. If you are using only transformers that have this method, then you can call ```col_transformer.get_feature_names()``` to easily get them all.
+  Note: If you are using pipelines (like in tip #1), you’ll need to dig a little deeper, and use the Pipeline attribute ```named_steps```. In this case:
+
+  ```
+  col_transformer.named_transformers_['cats'].named_steps['ohe'].get_feature_names()
+  ```
+- Tip 3: Feel free to create your own transformers
+ColumnTransformer works with any transformer, so feel free to create your own. We’re not going to go too deep into custom transformers today, but there is a caveat when using custom transformers with ColumnTransformer that I wanted to point out.
+For our ferry project, we can extract the date features with a custom transformer:
+  ```
+  from sklearn.base import TransformerMixin, BaseEstimator
+  class DateTransformer(TransformerMixin, BaseEstimator):
+      """Extracts features from datetime column
+
+      Returns:
+        hour: hour
+        day: Between 1 and the number of days in the month
+        month: Between 1 and 12 inclusive.
+        year: four-digit year
+        weekday: day of the week as an integer. Mon=0 and Sun=6
+     """
+  def fit(self, x, y=None):
+          return self
+  def transform(self, x, y=None):
+          result = pd.DataFrame(x, columns=['date_hour'])
+          result['hour'] = [dt.hour for dt in result['date_hour']]
+          result['day'] = [dt.day for dt in result['date_hour']]
+          result['month'] = [dt.month for dt in result['date_hour']]
+          result['year'] = [dt.year for dt in result['date_hour']]
+          result['weekday'] = [dt.weekday() for dt in
+                               result['date_hour']]
+          return result[['hour', 'day', 'month', 'year', 'weekday']]
+
+  def get_feature_names(self):
+          return ['hour','day', 'month', 'year', 'weekday']
+  ```
+
+  Note that ColumnTransformer “sends” the columns as a numpy array. To convert these timestamps from strings, I cast them as a pandas DataFrame (maybe not the most elegant solution).
+  Note that ColumnTransformer “sends” all of the specified columns to our transformer together. This means that you need to design your transformer to take and transform multiple columns at the same time, or make sure to send each column in a separate line of the ColumnTransformer. Since our custom transformer is only designed for process a single column, we would need to tailor our ColumnTransformer like this (assuming we want to re-use it in a situation with two datetime columns that we want to expand):
+  ```
+  transformers=[(‘dates1’, DateTransformer, [‘start_date’])
+  ct = ColumnTransformer(
+            transformers=[
+                (‘dates1’, DateTransformer, [‘start_date’]),
+                (‘dates2’, DateTransformer, [‘end_date’])
+            ])
+  ```
+
+## [Pipeline Design: Another Example](https://www.analyticsvidhya.com/blog/2020/01/build-your-first-machine-learning-pipeline-using-scikit-learn/) <a name="Pipeline_Design_Another_Example"></a>
